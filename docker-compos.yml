@@ -1,0 +1,29 @@
+services:
+  frontend:
+    container_name: 'resrouce-frontend'
+    image: asia-east1-docker.pkg.dev/strong-summer-481511-s6/my-survey-repo/resource-frontend:v1
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: always
+    ports:
+      - "3001:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_API_URL=https://resrouce.supersurvey.live/api/v1
+    networks:
+      - survey-network
+    
+    # --- ADD THIS SECTION ---
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/ || exit 1"]
+      interval: 30s    # How often to check
+      timeout: 10s     # How long to wait for a response
+      retries: 3       # How many failures before marking as "unhealthy"
+      start_period: 20s # Give the app time to boot up before starting checks
+    # ------------------------
+
+networks:
+  survey-network:
+    external: true
+    name: sa_online_survey_api_survey-network
