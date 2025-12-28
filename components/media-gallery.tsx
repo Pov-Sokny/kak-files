@@ -7,7 +7,7 @@ import { useEffect, useState } from "react"
 import { useToast } from "@/hooks/use-toast"
 import { Badge } from "@/components/ui/badge"
 
-const API_BASE_URL = "http://resource.supersurvey.live/api/v1/files"
+const API_BASE_URL = "https://resource.supersurvey.live/api/v1/files"
 
 interface FileItem {
   name: string
@@ -134,6 +134,11 @@ export function MediaGallery({ refreshTrigger }: MediaGalleryProps) {
     return `${(bytes / 1024 / 1024).toFixed(1)} MB`
   }
 
+  const isImage = (extension: string) => {
+    const ext = extension.toLowerCase()
+    return ["jpg", "jpeg", "png", "gif", "webp", "svg", "bmp"].includes(ext)
+  }
+
   if (isLoading) {
     return (
       <Card className="p-6 lg:p-8">
@@ -170,6 +175,17 @@ export function MediaGallery({ refreshTrigger }: MediaGalleryProps) {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {files.map((file) => (
           <Card key={file.name} className="overflow-hidden group hover:shadow-lg transition-shadow">
+            {isImage(file.extension) && (
+              <div className="aspect-video bg-muted relative overflow-hidden">
+                <img
+                  src={file.uri || "/placeholder.svg"}
+                  alt={file.name}
+                  className="w-full h-full object-cover"
+                  loading="lazy"
+                />
+              </div>
+            )}
+
             <div className="p-4 space-y-4">
               <div className="flex items-start justify-between gap-2">
                 <div className="flex items-start gap-3 flex-1 min-w-0">

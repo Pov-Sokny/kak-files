@@ -9,7 +9,7 @@ import { useState, useCallback } from "react"
 import { useToast } from "@/hooks/use-toast"
 import { Progress } from "@/components/ui/progress"
 
-const API_BASE_URL = "http://resource.supersurvey.live/api/v1/files"
+const API_BASE_URL = "https://resource.supersurvey.live/api/v1/files"
 
 interface MediaUploadSectionProps {
   onUploadComplete?: () => void
@@ -30,6 +30,7 @@ export function MediaUploadSection({ onUploadComplete }: MediaUploadSectionProps
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [uploadedFileUrl, setUploadedFileUrl] = useState<string>("")
   const [isCopied, setIsCopied] = useState(false)
+  const [uploadedFile, setUploadedFile] = useState<UploadResponse | null>(null)
   const { toast } = useToast()
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -91,13 +92,13 @@ export function MediaUploadSection({ onUploadComplete }: MediaUploadSectionProps
     setIsUploading(true)
     setUploadProgress(0)
     setUploadedFileUrl("")
+    setUploadedFile(null)
     setIsCopied(false)
 
     try {
       const formData = new FormData()
       formData.append("file", selectedFile)
 
-      // Simulate progress
       const progressInterval = setInterval(() => {
         setUploadProgress((prev) => {
           if (prev >= 90) {
@@ -122,6 +123,7 @@ export function MediaUploadSection({ onUploadComplete }: MediaUploadSectionProps
 
       const data: UploadResponse = await response.json()
       setUploadedFileUrl(data.uri)
+      setUploadedFile(data)
 
       toast({
         title: "Upload successful",
@@ -142,9 +144,14 @@ export function MediaUploadSection({ onUploadComplete }: MediaUploadSectionProps
       })
       setUploadProgress(0)
       setUploadedFileUrl("")
+      setUploadedFile(null)
     } finally {
       setIsUploading(false)
     }
+  }
+
+  const isImage = (contentType: string) => {
+    return contentType.startsWith("image/")
   }
 
   return (
@@ -219,6 +226,15 @@ export function MediaUploadSection({ onUploadComplete }: MediaUploadSectionProps
                 <Check className="w-4 h-4 text-primary" />
                 <span>File uploaded successfully!</span>
               </div>
+              {uploadedFile && isImage(uploadedFile.contentType) && (
+                <div className="rounded-lg overflow-hidden border-2 border-border">
+                  <img
+                    src={uploadedFile.uri || "/placeholder.svg"}
+                    alt={uploadedFile.name}
+                    className="w-full h-auto max-h-96 object-contain bg-muted"
+                  />
+                </div>
+              )}
               <div className="flex items-center gap-2">
                 <div className="flex-1 bg-background rounded-md px-3 py-2 text-sm text-muted-foreground truncate border">
                   {uploadedFileUrl}
