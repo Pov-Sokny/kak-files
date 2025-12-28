@@ -3,7 +3,7 @@
 import type React from "react"
 
 import { useState, useEffect, useRef } from "react"
-import { Upload, Copy, Check, ImageIcon, FilmIcon, X, Loader2, Download } from "lucide-react"
+import { Upload, Copy, Check, ImageIcon, FilmIcon, X, Loader2, Download, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -101,6 +101,25 @@ export default function FileManager() {
       window.URL.revokeObjectURL(downloadUrl)
     } catch (error) {
       toast({ title: "Download Failed", variant: "destructive", description: "Could not download the file." })
+    }
+  }
+
+  const handleFileDelete = async (fileName: string) => {
+    if (!confirm(`Are you sure you want to delete ${fileName}?`)) return
+
+    try {
+      const res = await fetch(`${API_URL}/${fileName}`, {
+        method: "DELETE",
+      })
+
+      if (res.ok) {
+        toast({ title: "Deleted", description: "File has been removed successfully." })
+        fetchFiles()
+      } else {
+        throw new Error("Failed to delete")
+      }
+    } catch (error) {
+      toast({ title: "Delete Failed", variant: "destructive", description: "Could not remove the file." })
     }
   }
 
@@ -257,7 +276,7 @@ export default function FileManager() {
               ? files.map((file) => (
                   <Card
                     key={file.name}
-                    className="group overflow-hidden border-none shadow-sm hover:shadow-md transition-shadow bg-card"
+                    className="group overflow-hidden border-none shadow-sm hover:shadow-md transition-shadow bg-card relative"
                   >
                     <div className="aspect-square relative bg-muted flex items-center justify-center">
                       {!isVideo(file.contentType) ? (
@@ -272,27 +291,32 @@ export default function FileManager() {
                           <span className="text-[10px] uppercase font-bold text-muted-foreground">Video</span>
                         </div>
                       )}
-                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-2 px-4">
+                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 px-4">
                         <Button
-                          size="sm"
-                          className="w-full bg-primary hover:bg-primary/90"
+                          size="icon"
+                          className="bg-primary hover:bg-primary/90 w-10 h-10"
                           onClick={() => copyToClipboard(file.uri, file.name)}
+                          title="Copy Link"
                         >
-                          {copiedId === file.name ? (
-                            <Check className="w-4 h-4 mr-2" />
-                          ) : (
-                            <Copy className="w-4 h-4 mr-2" />
-                          )}
-                          {copiedId === file.name ? "Copied" : "Copy Link"}
+                          {copiedId === file.name ? <Check className="w-5 h-5" /> : <Copy className="w-5 h-5" />}
                         </Button>
                         <Button
-                          size="sm"
+                          size="icon"
                           variant="secondary"
-                          className="w-full"
+                          className="w-10 h-10"
                           onClick={() => handleDownload(file.uri, file.name)}
+                          title="Download"
                         >
-                          <Download className="w-4 h-4 mr-2" />
-                          Download
+                          <Download className="w-5 h-5" />
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant="destructive"
+                          className="w-10 h-10"
+                          onClick={() => handleFileDelete(file.name)}
+                          title="Delete"
+                        >
+                          <Trash2 className="w-5 h-5" />
                         </Button>
                       </div>
                     </div>
