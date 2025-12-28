@@ -136,7 +136,7 @@ export default function FileManager() {
     <main className="min-h-screen bg-background p-6 md:p-12 font-sans">
       <div className="max-w-6xl mx-auto space-y-12">
         <header className="space-y-2">
-          <h1 className="text-4xl font-bold tracking-tight text-foreground">Cloud Manager</h1>
+          <h1 className="text-4xl font-bold tracking-tight text-foreground">Super file</h1>
           <p className="text-muted-foreground">Upload and manage your media assets seamlessly.</p>
         </header>
 
