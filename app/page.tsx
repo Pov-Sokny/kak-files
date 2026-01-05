@@ -3,14 +3,18 @@
 import type React from "react"
 
 import { useState, useEffect, useRef } from "react"
-import { Upload, Copy, Check, ImageIcon, FilmIcon, X, Loader2, Download, Trash2 } from "lucide-react"
+import { Upload, Copy, Check, ImageIcon, FilmIcon, Loader2, Download, Trash2, FileIcon, Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Label } from "@/components/ui/label"
+import { Badge } from "@/components/ui/badge"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { toast } from "@/hooks/use-toast"
-import { cn } from "@/lib/utils"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
-const API_URL = "https://resource.supersurvey.live/api/v1/files"
+const API_URL = "/api/files"
 
 interface FileItem {
   name: string
@@ -23,6 +27,8 @@ interface FileItem {
 export default function FileManager() {
   const [files, setFiles] = useState<FileItem[]>([])
   const [uploading, setUploading] = useState(false)
+  const [shouldCompress, setShouldCompress] = useState(false)
+  const [compressionLevel, setCompressionLevel] = useState("HIGH")
   const [preview, setPreview] = useState<string | null>(null)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [uploadUrl, setUploadUrl] = useState<string | null>(null)
@@ -36,11 +42,15 @@ export default function FileManager() {
 
   const fetchFiles = async () => {
     try {
-      const res = await fetch(API_URL)
+      const res = await fetch(API_URL, { cache: "no-store" })
+      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`)
+
       const data = await res.json()
-      setFiles(Array.isArray(data) ? data : data.files || [])
-    } catch (error) {
-      console.error("[v0] Error fetching files:", error)
+      const fileList = Array.isArray(data) ? data : data.files || data.data || []
+      setFiles(fileList)
+    } catch (error: any) {
+      console.error("[v0] Error fetching files:", error.message)
+      toast({ title: "Fetch Failed", variant: "destructive", description: "Could not load files." })
     }
   }
 
@@ -50,13 +60,18 @@ export default function FileManager() {
 
     setSelectedFile(file)
     setPreview(URL.createObjectURL(file))
-    setUploadUrl(null) // Reset URL until upload is confirmed
+    setUploadUrl(null)
+    if (file.type.startsWith("image/")) {
+      setShouldCompress(true)
+    }
   }
 
   const handleClearSelection = () => {
     setPreview(null)
     setUploadUrl(null)
     setSelectedFile(null)
+    setShouldCompress(false)
+    setCompressionLevel("HIGH")
     setInputKey((prev) => prev + 1)
   }
 
@@ -68,20 +83,32 @@ export default function FileManager() {
     formData.append("file", selectedFile)
 
     try {
-      const res = await fetch(API_URL, {
+      const uploadUrl = new URL(API_URL, window.location.origin)
+      if (shouldCompress && selectedFile.type.startsWith("image/")) {
+        uploadUrl.searchParams.append("compress", "true")
+        uploadUrl.searchParams.append("level", compressionLevel)
+      }
+
+      const res = await fetch(uploadUrl.toString(), {
         method: "POST",
         body: formData,
       })
-      const data = await res.json()
 
+      if (!res.ok) throw new Error("Upload failed")
+
+      const data = await res.json()
       const fileUrl = data.uri || data.url || (data.data && data.data.uri)
+
       if (fileUrl) {
         setUploadUrl(fileUrl)
         fetchFiles()
-        toast({ title: "Upload Successful", description: "File has been uploaded and added to the gallery." })
+        toast({
+          title: "Success",
+          description: shouldCompress ? "Image compressed and uploaded." : "File uploaded successfully.",
+        })
       }
     } catch (error) {
-      toast({ title: "Upload Failed", variant: "destructive", description: "Something went wrong during upload." })
+      toast({ title: "Upload Failed", variant: "destructive", description: "Check your connection and try again." })
     } finally {
       setUploading(false)
     }
@@ -133,39 +160,39 @@ export default function FileManager() {
   const isVideo = (contentType: string) => contentType.startsWith("video/")
 
   return (
-    <main className="min-h-screen bg-background p-6 md:p-12 font-sans">
-      <div className="max-w-6xl mx-auto space-y-12">
-        <header className="space-y-2">
-          <h1 className="text-4xl font-bold tracking-tight text-foreground">Super file</h1>
-          <p className="text-muted-foreground">Upload and manage your media assets seamlessly.</p>
+    <main className="min-h-screen bg-background p-4 md:p-8 lg:p-12 font-sans selection:bg-primary/20">
+      <div className="max-w-7xl mx-auto space-y-12">
+        <header className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b pb-8">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <div className="bg-primary/10 p-2 rounded-lg">
+                <FileIcon className="w-6 h-6 text-primary" />
+              </div>
+              <h1 className="text-3xl font-bold tracking-tight">Cloud Manager</h1>
+            </div>
+            <p className="text-muted-foreground">High-performance media storage and management.</p>
+          </div>
+          <Badge variant="outline" className="w-fit border-primary/20 text-primary bg-primary/5 px-3 py-1">
+            Active Session
+          </Badge>
         </header>
 
         {/* Section 1: Upload & Preview */}
-        <section className="space-y-6">
-          <div className="flex items-center gap-2 text-primary">
-            <Upload className="w-5 h-5" />
-            <h2 className="text-xl font-semibold">Upload Media</h2>
-          </div>
-
-          <div className="grid md:grid-cols-2 gap-8">
-            <Card
-              className={cn(
-                "border-dashed border-2 bg-muted/30 hover:bg-muted/50 transition-colors cursor-pointer",
-                selectedFile && "border-primary bg-primary/5",
-              )}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <CardContent className="flex flex-col items-center justify-center h-64 space-y-4">
-                <div className="p-4 bg-primary/10 rounded-full">
-                  {uploading ? (
-                    <Loader2 className="w-8 h-8 text-primary animate-spin" />
-                  ) : (
-                    <Upload className="w-8 h-8 text-primary" />
-                  )}
+        <div className="grid lg:grid-cols-12 gap-8 items-start">
+          <section className="lg:col-span-5 space-y-6">
+            <Card className="border-2 border-dashed border-muted-foreground/20 bg-muted/5 transition-all hover:border-primary/50 group relative">
+              <CardContent
+                className="flex flex-col items-center justify-center min-h-[300px] cursor-pointer p-8"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <div className="mb-4 rounded-full bg-primary/10 p-4 transition-transform group-hover:scale-110">
+                  <Plus className="h-8 w-8 text-primary" />
                 </div>
-                <div className="text-center">
-                  <p className="font-medium">{selectedFile ? selectedFile.name : "Click to upload or drag and drop"}</p>
-                  <p className="text-sm text-muted-foreground">Images or Videos (max 50MB)</p>
+                <div className="text-center space-y-2">
+                  <h3 className="text-lg font-semibold">{selectedFile ? selectedFile.name : "Select Media"}</h3>
+                  <p className="text-sm text-muted-foreground max-w-[240px] mx-auto">
+                    Drag assets here or click to browse. Supports images and videos up to 50MB.
+                  </p>
                 </div>
                 <input
                   key={inputKey}
@@ -177,158 +204,237 @@ export default function FileManager() {
                 />
               </CardContent>
             </Card>
+          </section>
 
-            <Card className={cn("overflow-hidden transition-all duration-300", !preview && "opacity-50 grayscale")}>
-              <CardContent className="p-0 flex flex-col h-64">
+          <section className="lg:col-span-7">
+            <Card className="min-h-[300px] flex flex-col overflow-hidden border-none shadow-xl ring-1 ring-muted-foreground/10 bg-card/50 backdrop-blur-sm">
+              <CardContent className="flex-1 p-0 flex flex-col">
                 {preview ? (
-                  <>
-                    <div className="relative flex-1 bg-black flex items-center justify-center overflow-hidden">
-                      <Button
-                        size="icon"
-                        variant="destructive"
-                        className="absolute top-2 right-2 z-10 w-8 h-8 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
-                        onClick={handleClearSelection}
-                      >
-                        <X className="w-4 h-4" />
-                      </Button>
-                      {selectedFile?.type.startsWith("video/") ||
-                      files.find((f) => f.uri === preview)?.contentType.startsWith("video/") ? (
-                        <video src={preview} className="w-full h-full object-contain" controls />
+                  <div className="flex flex-col h-full">
+                    <div className="relative flex-1 bg-zinc-950 flex items-center justify-center overflow-hidden min-h-[320px]">
+                      {selectedFile?.type.startsWith("video/") ? (
+                        <video src={preview} className="max-h-full w-full object-contain" controls />
                       ) : (
                         <img
                           src={preview || "/placeholder.svg"}
                           alt="Preview"
-                          className="w-full h-full object-contain"
+                          className="max-h-full w-full object-contain animate-in fade-in zoom-in-95 duration-500"
                         />
                       )}
+
+                      {/* Floating reset button for a cleaner look */}
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={handleClearSelection}
+                        className="absolute top-4 right-4 h-8 px-3 text-xs bg-black/40 hover:bg-black/60 text-white border-white/10 backdrop-blur-md rounded-full"
+                      >
+                        Change File
+                      </Button>
                     </div>
-                    <div className="p-4 bg-card flex flex-col gap-3 border-t">
+
+                    <div className="p-6 space-y-4">
                       {uploadUrl ? (
-                        <div className="space-y-3">
+                        <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-500">
                           <div className="flex items-center justify-between">
-                            <p className="text-[10px] font-bold uppercase text-[#00a368]">Upload Successful</p>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-6 text-xs text-muted-foreground hover:text-foreground"
-                              onClick={handleClearSelection}
-                            >
-                              Clear Preview
+                            <Badge className="bg-[#00a368] hover:bg-[#00a368]">Ready to share</Badge>
+                            <Button variant="ghost" size="sm" onClick={handleClearSelection} className="text-xs h-7">
+                              New Upload
                             </Button>
                           </div>
-                          <div className="flex items-center gap-2">
-                            <Input value={uploadUrl} readOnly className="font-mono text-xs bg-muted h-9" />
+                          <div className="flex gap-2">
+                            <Input
+                              value={uploadUrl}
+                              readOnly
+                              className="font-mono text-xs bg-muted border-none ring-offset-background focus-visible:ring-0"
+                            />
                             <Button
                               size="icon"
-                              className="bg-[#00a368] hover:bg-[#00a368]/90 shrink-0"
+                              className="bg-[#00a368] hover:bg-[#00a368]/90"
                               onClick={() => copyToClipboard(uploadUrl, "upload")}
                             >
-                              {copiedId === "upload" ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                              {copiedId === "upload" ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
                             </Button>
                           </div>
                         </div>
                       ) : (
-                        <div className="grid grid-cols-2 gap-3">
-                          <Button
-                            variant="outline"
-                            className="w-full border-muted-foreground/20 text-muted-foreground hover:bg-muted bg-transparent"
-                            onClick={handleClearSelection}
-                            disabled={uploading}
-                          >
-                            <X className="w-4 h-4 mr-2" />
-                            Clear
-                          </Button>
-                          <Button
-                            className="w-full bg-[#00a368] hover:bg-[#00a368]/90 text-white font-semibold"
-                            onClick={handleConfirmUpload}
-                            disabled={uploading}
-                          >
-                            {uploading ? (
-                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                            ) : (
-                              <Upload className="w-4 h-4 mr-2" />
-                            )}
-                            Upload
-                          </Button>
+                        <div className="flex flex-col space-y-4">
+                          <div className="flex flex-col sm:flex-row items-center gap-4 bg-muted/30 p-4 rounded-lg border border-primary/10">
+                            <div className="flex items-center space-x-3 whitespace-nowrap">
+                              <Checkbox
+                                id="compress"
+                                checked={shouldCompress}
+                                onCheckedChange={(checked) => setShouldCompress(checked === true)}
+                              />
+                              <Label htmlFor="compress" className="text-sm font-semibold cursor-pointer select-none">
+                                Compress Image
+                              </Label>
+                            </div>
+
+                            <div className="flex items-center gap-2 w-full">
+                              <Label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">
+                                Level:
+                              </Label>
+                              <Select
+                                value={compressionLevel}
+                                onValueChange={setCompressionLevel}
+                                disabled={!shouldCompress}
+                              >
+                                <SelectTrigger className="h-9 bg-background">
+                                  <SelectValue placeholder="Select level" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="LOW">LOW</SelectItem>
+                                  <SelectItem value="MEDIUM">MEDIUM</SelectItem>
+                                  <SelectItem value="HIGH">HIGH</SelectItem>
+                                  <SelectItem value="EXTREME">EXTREME</SelectItem>
+                                  <SelectItem value="ULTRA">ULTRA</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </div>
+
+                          <div className="flex gap-3 w-full sm:w-auto self-end">
+                            <Button
+                              variant="outline"
+                              onClick={handleClearSelection}
+                              disabled={uploading}
+                              className="flex-1 sm:flex-none bg-transparent"
+                            >
+                              Clear
+                            </Button>
+                            <Button
+                              onClick={handleConfirmUpload}
+                              disabled={uploading}
+                              className="bg-[#00a368] hover:bg-[#00a368]/90 text-white min-w-[120px] flex-1 sm:flex-none"
+                            >
+                              {uploading ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Upload className="h-4 w-4 mr-2" />
+                              )}
+                              Upload
+                            </Button>
+                          </div>
                         </div>
                       )}
                     </div>
-                  </>
+                  </div>
                 ) : (
-                  <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm italic">
-                    Select a file to see preview
+                  <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground p-12 space-y-4">
+                    <div className="p-4 rounded-full bg-muted/50 border">
+                      <ImageIcon className="h-8 w-8 opacity-20" />
+                    </div>
+                    <p className="text-sm font-medium opacity-50">Nothing to preview yet</p>
                   </div>
                 )}
               </CardContent>
             </Card>
-          </div>
-        </section>
+          </section>
+        </div>
 
         {/* Section 2: Gallery List */}
-        <section className="space-y-6">
-          <div className="flex items-center gap-2 text-primary">
-            <ImageIcon className="w-5 h-5" />
-            <h2 className="text-xl font-semibold">Media Gallery</h2>
+        <section className="space-y-8">
+          <div className="flex items-center justify-between border-b pb-4">
+            <div className="flex items-center gap-3">
+              <h2 className="text-2xl font-semibold">Media Gallery</h2>
+              <Badge variant="secondary" className="rounded-full">
+                {files.length}
+              </Badge>
+            </div>
+            <Button variant="ghost" size="sm" onClick={fetchFiles} className="text-muted-foreground">
+              Refresh
+            </Button>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-            {files.length > 0
-              ? files.map((file) => (
-                  <Card
-                    key={file.name}
-                    className="group overflow-hidden border-none shadow-sm hover:shadow-md transition-shadow bg-card relative"
-                  >
-                    <div className="aspect-square relative bg-muted flex items-center justify-center">
-                      {!isVideo(file.contentType) ? (
-                        <img
-                          src={file.uri || "/placeholder.svg"}
-                          alt={file.name}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <div className="flex flex-col items-center gap-2">
-                          <FilmIcon className="w-10 h-10 text-muted-foreground" />
-                          <span className="text-[10px] uppercase font-bold text-muted-foreground">Video</span>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            <TooltipProvider>
+              {files.map((file) => (
+                <Card
+                  key={file.name}
+                  className="group overflow-hidden border-none shadow-sm hover:shadow-xl transition-all duration-300 ring-1 ring-muted-foreground/10 hover:ring-primary/30"
+                >
+                  <div className="aspect-video relative bg-zinc-900 flex items-center justify-center group-hover:scale-[1.02] transition-transform duration-500">
+                    {!isVideo(file.contentType) ? (
+                      <img
+                        src={file.uri || "/placeholder.svg"}
+                        alt={file.name}
+                        className="w-full h-full object-cover opacity-90 group-hover:opacity-100"
+                      />
+                    ) : (
+                      <div className="flex flex-col items-center gap-3">
+                        <div className="p-3 bg-white/10 rounded-full backdrop-blur-sm">
+                          <FilmIcon className="h-8 w-8 text-white" />
                         </div>
-                      )}
-                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 px-4">
-                        <Button
-                          size="icon"
-                          className="bg-primary hover:bg-primary/90 w-10 h-10"
-                          onClick={() => copyToClipboard(file.uri, file.name)}
-                          title="Copy Link"
-                        >
-                          {copiedId === file.name ? <Check className="w-5 h-5" /> : <Copy className="w-5 h-5" />}
-                        </Button>
-                        <Button
-                          size="icon"
-                          variant="secondary"
-                          className="w-10 h-10"
-                          onClick={() => handleDownload(file.uri, file.name)}
-                          title="Download"
-                        >
-                          <Download className="w-5 h-5" />
-                        </Button>
-                        <Button
-                          size="icon"
-                          variant="destructive"
-                          className="w-10 h-10"
-                          onClick={() => handleFileDelete(file.name)}
-                          title="Delete"
-                        >
-                          <Trash2 className="w-5 h-5" />
-                        </Button>
+                        <span className="text-[10px] uppercase font-black tracking-widest text-white/60">
+                          MP4 Media
+                        </span>
+                      </div>
+                    )}
+
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-all duration-300 flex flex-col justify-end p-4">
+                      <div className="flex items-center justify-center gap-2 translate-y-4 group-hover:translate-y-0 transition-transform duration-300">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              size="icon"
+                              className="bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/10"
+                              onClick={() => copyToClipboard(file.uri, file.name)}
+                            >
+                              {copiedId === file.name ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Copy URL</TooltipContent>
+                        </Tooltip>
+
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              size="icon"
+                              className="bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/10"
+                              onClick={() => handleDownload(file.uri, file.name)}
+                            >
+                              <Download className="h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Download</TooltipContent>
+                        </Tooltip>
+
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              size="icon"
+                              variant="destructive"
+                              className="bg-red-500/20 hover:bg-red-500/40 backdrop-blur-md border border-red-500/20"
+                              onClick={() => handleFileDelete(file.name)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Delete</TooltipContent>
+                        </Tooltip>
                       </div>
                     </div>
-                    <div className="p-3">
-                      <p className="text-xs font-medium truncate">{file.name}</p>
-                      <p className="text-[10px] text-muted-foreground">{(file.size / (1024 * 1024)).toFixed(2)} MB</p>
+                  </div>
+                  <div className="p-4 space-y-1 bg-card">
+                    <h4 className="text-sm font-semibold truncate pr-4">{file.name}</h4>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-tight">
+                        {file.extension || "media"}
+                      </span>
+                      <span className="text-[10px] font-mono text-muted-foreground">
+                        {(file.size / (1024 * 1024)).toFixed(1)}MB
+                      </span>
                     </div>
-                  </Card>
-                ))
-              : Array.from({ length: 4 }).map((_, i) => (
-                  <div key={i} className="aspect-square rounded-xl bg-muted animate-pulse" />
-                ))}
+                  </div>
+                </Card>
+              ))}
+            </TooltipProvider>
+
+            {files.length === 0 &&
+              Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="aspect-video rounded-xl bg-muted/50 animate-pulse border-2 border-dashed" />
+              ))}
           </div>
         </section>
       </div>
