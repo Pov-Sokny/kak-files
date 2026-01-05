@@ -22,7 +22,11 @@ interface FileItem {
   extension: string
   uri: string
   size: number
+  type?: "LOGIN" | "REGISTER" | "OTP" | "PROFILE" | "SURVEY" | "FRGPWD" | "DEFAULT"
 }
+
+const FILE_TYPES = ["LOGIN", "REGISTER", "OTP", "PROFILE", "SURVEY", "FRGPWD", "DEFAULT"] as const
+type FileType = (typeof FILE_TYPES)[number]
 
 export default function FileManager() {
   const [files, setFiles] = useState<FileItem[]>([])
@@ -34,6 +38,7 @@ export default function FileManager() {
   const [uploadUrl, setUploadUrl] = useState<string | null>(null)
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [inputKey, setInputKey] = useState(0)
+  const [selectedType, setSelectedType] = useState<FileType>("DEFAULT")
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -72,6 +77,7 @@ export default function FileManager() {
     setSelectedFile(null)
     setShouldCompress(false)
     setCompressionLevel("HIGH")
+    setSelectedType("DEFAULT")
     setInputKey((prev) => prev + 1)
   }
 
@@ -84,6 +90,8 @@ export default function FileManager() {
 
     try {
       const uploadUrl = new URL(API_URL, window.location.origin)
+      uploadUrl.searchParams.append("type", selectedType)
+
       if (shouldCompress && selectedFile.type.startsWith("image/")) {
         uploadUrl.searchParams.append("compress", "true")
         uploadUrl.searchParams.append("level", compressionLevel)
@@ -168,7 +176,7 @@ export default function FileManager() {
               <div className="bg-primary/10 p-2 rounded-lg">
                 <FileIcon className="w-6 h-6 text-primary" />
               </div>
-              <h1 className="text-3xl font-bold tracking-tight text-primary">Super File</h1>
+              <h1 className="text-3xl font-bold tracking-tight">Cloud Manager</h1>
             </div>
             <p className="text-muted-foreground">High-performance media storage and management.</p>
           </div>
@@ -289,9 +297,28 @@ export default function FileManager() {
                                   <SelectItem value="HIGH">HIGH</SelectItem>
                                   <SelectItem value="EXTREME">EXTREME</SelectItem>
                                   <SelectItem value="ULTRA">ULTRA</SelectItem>
+                                  <SelectItem value="NONE">NONE</SelectItem>
                                 </SelectContent>
                               </Select>
                             </div>
+                          </div>
+
+                          <div className="flex flex-col gap-2">
+                            <Label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">
+                              File Category:
+                            </Label>
+                            <Select value={selectedType} onValueChange={(value) => setSelectedType(value as FileType)}>
+                              <SelectTrigger className="h-10 bg-background border-primary/20">
+                                <SelectValue placeholder="Select type" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {FILE_TYPES.map((type) => (
+                                  <SelectItem key={type} value={type}>
+                                    {type}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
                           </div>
 
                           <div className="flex gap-3 w-full sm:w-auto self-end">
@@ -417,11 +444,17 @@ export default function FileManager() {
                     </div>
                   </div>
                   <div className="p-4 space-y-1 bg-card">
-                    <h4 className="text-sm font-semibold truncate pr-4">{file.name}</h4>
+                    <h4 className="text-sm font-semibold truncate flex-1">{file.name}</h4>
+                    {file.type && (
+                      <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4 border-primary/30 text-primary">
+                        {file.type}
+                      </Badge>
+                    )}
                     <div className="flex items-center justify-between">
                       <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-tight">
                         {file.extension || "media"}
                       </span>
+                      <div>{file.type}</div>
                       <span className="text-[10px] font-mono text-muted-foreground">
                         {(file.size / (1024 * 1024)).toFixed(1)}MB
                       </span>
