@@ -168,7 +168,7 @@ export default function FileManager() {
               <div className="bg-primary/10 p-2 rounded-lg">
                 <FileIcon className="w-6 h-6 text-primary" />
               </div>
-              <h1 className="text-3xl font-bold tracking-tight">Cloud Manager</h1>
+              <h1 className="text-3xl font-bold tracking-tight text-primary">Super File</h1>
             </div>
             <p className="text-muted-foreground">High-performance media storage and management.</p>
           </div>
