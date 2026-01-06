@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-
+import Image from "next/image"
 import { useState, useEffect, useRef } from "react"
 import { Upload, Copy, Check, ImageIcon, FilmIcon, Loader2, Download, Trash2, FileIcon, Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -22,11 +22,46 @@ interface FileItem {
   extension: string
   uri: string
   size: number
-  type?: "LOGIN" | "REGISTER" | "OTP" | "PROFILE" | "SURVEY" | "FRGPWD" | "DEFAULT"
+  type?: "LOGIN" | "REGISTER" | "OTP" | "PROFILE" | "SURVEY" | "QR" | "FRGPWD" | "DEFAULT" | "BGLOGIN" | "BGREGISTER" | "BGOTP" | "BGPROFILE" | "BGSURVEY" | "BGQR" | "BGFRGPWD" | "BGDEFAULT" 
+  blurDataURL?: string
 }
 
-const FILE_TYPES = ["LOGIN", "REGISTER", "OTP", "PROFILE", "SURVEY", "FRGPWD", "DEFAULT"] as const
+const FILE_TYPES = ["LOGIN", "REGISTER", "OTP", "PROFILE", "SURVEY", "QR", "FRGPWD", "DEFAULT", "BGLOGIN", "BGREGISTER", "BGOTP", "BGPROFILE", "BGSURVEY", "BGQR", "BGFRGPWD", "BGDEFAULT"] as const
 type FileType = (typeof FILE_TYPES)[number]
+
+// Utility function to generate blur data URLs from image URIs
+const generateBlurDataURL = (imageUrl: string): Promise<string> => {
+  return new Promise((resolve) => {
+    const canvas = document.createElement("canvas")
+    canvas.width = 10
+    canvas.height = 10
+    const ctx = canvas.getContext("2d")
+
+    const img = new window.Image()
+    img.crossOrigin = "anonymous"
+    img.onload = () => {
+      ctx?.drawImage(img, 0, 0, 10, 10)
+      resolve(canvas.toDataURL())
+    }
+    img.onerror = () => {
+      resolve(
+        "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 400'%3E%3Crect fill='%23e5e5e5' width='400' height='400'/%3E%3C/svg%3E",
+      )
+    }
+    img.src = imageUrl
+  })
+}
+
+const SkeletonLoader = () => (
+  <div className="w-full h-full space-y-3 p-4">
+    <div className="skeleton h-4 w-3/4 rounded-full" />
+    <div className="skeleton h-4 w-full rounded-full" />
+    <div className="skeleton h-4 w-5/6 rounded-full" />
+    <div className="skeleton h-4 w-4/5 rounded-full" />
+    <div className="skeleton h-4 w-full rounded-full" />
+    <div className="skeleton h-4 w-3/4 rounded-full" />
+  </div>
+)
 
 export default function FileManager() {
   const [files, setFiles] = useState<FileItem[]>([])
@@ -39,6 +74,8 @@ export default function FileManager() {
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [inputKey, setInputKey] = useState(0)
   const [selectedType, setSelectedType] = useState<FileType>("DEFAULT")
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const [galleryLoading, setGalleryLoading] = useState(true)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -47,15 +84,29 @@ export default function FileManager() {
 
   const fetchFiles = async () => {
     try {
+      setGalleryLoading(true)
       const res = await fetch(API_URL, { cache: "no-store" })
       if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`)
 
       const data = await res.json()
       const fileList = Array.isArray(data) ? data : data.files || data.data || []
-      setFiles(fileList)
+
+      const filesWithBlur = await Promise.all(
+        fileList.map(async (file: FileItem) => {
+          if (!file.contentType.startsWith("video/")) {
+            const blurDataURL = await generateBlurDataURL(file.uri)
+            return { ...file, blurDataURL }
+          }
+          return file
+        }),
+      )
+
+      setFiles(filesWithBlur)
     } catch (error: any) {
       console.error("[v0] Error fetching files:", error.message)
       toast({ title: "Fetch Failed", variant: "destructive", description: "Could not load files." })
+    } finally {
+      setGalleryLoading(false)
     }
   }
 
@@ -64,6 +115,7 @@ export default function FileManager() {
     if (!file) return
 
     setSelectedFile(file)
+    setPreviewLoading(true)
     setPreview(URL.createObjectURL(file))
     setUploadUrl(null)
     if (file.type.startsWith("image/")) {
@@ -223,11 +275,22 @@ export default function FileManager() {
                       {selectedFile?.type.startsWith("video/") ? (
                         <video src={preview} className="max-h-full w-full object-contain" controls />
                       ) : (
-                        <img
-                          src={preview || "/placeholder.svg"}
-                          alt="Preview"
-                          className="max-h-full w-full object-contain animate-in fade-in zoom-in-95 duration-500"
-                        />
+                        <>
+                          {previewLoading && <SkeletonLoader />}
+                          {!previewLoading && (
+                            <Image
+                              src={preview || "/placeholder.svg"}
+                              alt="Preview"
+                              fill
+                              priority
+                              placeholder="blur"
+                              blurDataURL="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Crect fill='%23e5e5e5' width='10' height='10'/%3E%3C/svg%3E"
+                              style={{ objectFit: "contain" }}
+                              className="animate-in fade-in zoom-in-95 duration-700"
+                              onLoadingComplete={() => setPreviewLoading(false)}
+                            />
+                          )}
+                        </>
                       )}
 
                       {/* Floating reset button for a cleaner look */}
@@ -375,99 +438,113 @@ export default function FileManager() {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            <TooltipProvider>
-              {files.map((file) => (
-                <Card
-                  key={file.name}
-                  className="group overflow-hidden border-none shadow-sm hover:shadow-xl transition-all duration-300 ring-1 ring-muted-foreground/10 hover:ring-primary/30"
-                >
-                  <div className="aspect-video relative bg-zinc-900 flex items-center justify-center group-hover:scale-[1.02] transition-transform duration-500">
-                    {!isVideo(file.contentType) ? (
-                      <img
-                        src={file.uri || "/placeholder.svg"}
-                        alt={file.name}
-                        className="w-full h-full object-cover opacity-90 group-hover:opacity-100"
-                      />
-                    ) : (
-                      <div className="flex flex-col items-center gap-3">
-                        <div className="p-3 bg-white/10 rounded-full backdrop-blur-sm">
-                          <FilmIcon className="h-8 w-8 text-white" />
-                        </div>
-                        <span className="text-[10px] uppercase font-black tracking-widest text-white/60">
-                          MP4 Media
-                        </span>
-                      </div>
-                    )}
-
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-all duration-300 flex flex-col justify-end p-4">
-                      <div className="flex items-center justify-center gap-2 translate-y-4 group-hover:translate-y-0 transition-transform duration-300">
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              size="icon"
-                              className="bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/10"
-                              onClick={() => copyToClipboard(file.uri, file.name)}
-                            >
-                              {copiedId === file.name ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>Copy URL</TooltipContent>
-                        </Tooltip>
-
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              size="icon"
-                              className="bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/10"
-                              onClick={() => handleDownload(file.uri, file.name)}
-                            >
-                              <Download className="h-4 w-4" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>Download</TooltipContent>
-                        </Tooltip>
-
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              size="icon"
-                              variant="destructive"
-                              className="bg-red-500/20 hover:bg-red-500/40 backdrop-blur-md border border-red-500/20"
-                              onClick={() => handleFileDelete(file.name)}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>Delete</TooltipContent>
-                        </Tooltip>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="p-4 space-y-1 bg-card">
-                    <h4 className="text-sm font-semibold truncate flex-1">{file.name}</h4>
-                    {file.type && (
-                      <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4 border-primary/30 text-primary">
-                        {file.type}
-                      </Badge>
-                    )}
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-tight">
-                        {file.extension || "media"}
-                      </span>
-                      <div>{file.type}</div>
-                      <span className="text-[10px] font-mono text-muted-foreground">
-                        {(file.size / (1024 * 1024)).toFixed(1)}MB
-                      </span>
-                    </div>
+            {galleryLoading ? (
+              [...Array(8)].map((_, i) => (
+                <Card key={i} className="overflow-hidden border-none shadow-sm ring-1 ring-muted-foreground/10">
+                  <div className="aspect-video bg-muted/50">
+                    <SkeletonLoader />
                   </div>
                 </Card>
-              ))}
-            </TooltipProvider>
+              ))
+            ) : (
+              <TooltipProvider>
+                {files.map((file) => (
+                  <Card
+                    key={file.name}
+                    className="group overflow-hidden border-none shadow-sm hover:shadow-xl transition-all duration-300 ring-1 ring-muted-foreground/10 hover:ring-primary/30"
+                  >
+                    <div className="aspect-video relative bg-zinc-900 flex items-center justify-center group-hover:scale-[1.02] transition-transform duration-500">
+                      {!isVideo(file.contentType) ? (
+                        <>
+                          <Image
+                            src={file.uri || "/placeholder.svg"}
+                            alt={file.name}
+                            fill
+                            placeholder={file.blurDataURL ? "blur" : "empty"}
+                            blurDataURL={
+                              file.blurDataURL ||
+                              "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Crect fill='%23e5e5e5' width='10' height='10'/%3E%3C/svg%3E"
+                            }
+                            style={{ objectFit: "cover" }}
+                            className="opacity-90 group-hover:opacity-100 transition-opacity duration-300 animate-in fade-in duration-500"
+                            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
+                          />
+                        </>
+                      ) : (
+                        <div className="flex flex-col items-center gap-3">
+                          <div className="p-3 bg-white/10 rounded-full backdrop-blur-sm">
+                            <FilmIcon className="h-8 w-8 text-white" />
+                          </div>
+                          <span className="text-[10px] uppercase font-black tracking-widest text-white/60">
+                            MP4 Media
+                          </span>
+                        </div>
+                      )}
 
-            {files.length === 0 &&
-              Array.from({ length: 4 }).map((_, i) => (
-                <div key={i} className="aspect-video rounded-xl bg-muted/50 animate-pulse border-2 border-dashed" />
-              ))}
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-all duration-300 flex flex-col justify-end p-4">
+                        <div className="flex items-center justify-center gap-2 translate-y-4 group-hover:translate-y-0 transition-transform duration-300">
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                size="icon"
+                                className="bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/10"
+                                onClick={() => copyToClipboard(file.uri, file.name)}
+                              >
+                                {copiedId === file.name ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Copy URL</TooltipContent>
+                          </Tooltip>
+
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                size="icon"
+                                className="bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/10"
+                                onClick={() => handleDownload(file.uri, file.name)}
+                              >
+                                <Download className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Download</TooltipContent>
+                          </Tooltip>
+
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                size="icon"
+                                variant="destructive"
+                                className="bg-red-500/20 hover:bg-red-500/40 backdrop-blur-md border border-red-500/20"
+                                onClick={() => handleFileDelete(file.name)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Delete</TooltipContent>
+                          </Tooltip>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="p-4 space-y-1 bg-card">
+                      <h4 className="text-sm font-semibold truncate flex-1">{file.name}</h4>
+                      {file.type && (
+                        <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4 border-primary/30 text-primary">
+                          {file.type}
+                        </Badge>
+                      )}
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-tight">
+                          {file.extension || "media"}
+                        </span>
+                        <span className="text-[10px] font-mono text-muted-foreground">
+                          {(file.size / (1024 * 1024)).toFixed(1)}MB
+                        </span>
+                      </div>
+                    </div>
+                  </Card>
+                ))}
+              </TooltipProvider>
+            )}
           </div>
         </section>
       </div>
