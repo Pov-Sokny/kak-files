@@ -29,6 +29,9 @@ interface FileItem {
 const FILE_TYPES = ["LOGIN", "REGISTER", "OTP", "PROFILE", "SURVEY", "QR", "FRGPWD", "DEFAULT", "BGLOGIN", "BGREGISTER", "BGOTP", "BGPROFILE", "BGSURVEY", "BGQR", "BGFRGPWD", "BGDEFAULT"] as const
 type FileType = (typeof FILE_TYPES)[number]
 
+const FILE_RESIZES = ["SD", "HD", "FHD", "QHD", "UHD", "UHD_2", "ORIGINAL"] as const
+type FileResize = (typeof FILE_RESIZES)[number]
+
 // Utility function to generate blur data URLs from image URIs
 const generateBlurDataURL = (imageUrl: string): Promise<string> => {
   return new Promise((resolve) => {
@@ -74,6 +77,7 @@ export default function FileManager() {
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [inputKey, setInputKey] = useState(0)
   const [selectedType, setSelectedType] = useState<FileType>("DEFAULT")
+  const [selectedResize, setSelectedResize] = useState<FileResize>("FHD")
   const [previewLoading, setPreviewLoading] = useState(false)
   const [galleryLoading, setGalleryLoading] = useState(true)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -130,49 +134,67 @@ export default function FileManager() {
     setShouldCompress(false)
     setCompressionLevel("HIGH")
     setSelectedType("DEFAULT")
+    setSelectedResize("ORIGINAL")
     setInputKey((prev) => prev + 1)
   }
 
   const handleConfirmUpload = async () => {
-    if (!selectedFile) return
+  if (!selectedFile) return
 
-    setUploading(true)
-    const formData = new FormData()
-    formData.append("file", selectedFile)
+  setUploading(true)
 
-    try {
-      const uploadUrl = new URL(API_URL, window.location.origin)
-      uploadUrl.searchParams.append("type", selectedType)
+  const formData = new FormData()
+  formData.append("file", selectedFile)
 
-      if (shouldCompress && selectedFile.type.startsWith("image/")) {
-        uploadUrl.searchParams.append("compress", "true")
-        uploadUrl.searchParams.append("level", compressionLevel)
-      }
+  try {
+    const uploadUrl = new URL("/api/files", window.location.origin)
 
-      const res = await fetch(uploadUrl.toString(), {
-        method: "POST",
-        body: formData,
-      })
+    // file category
+    uploadUrl.searchParams.append("type", selectedType)
 
-      if (!res.ok) throw new Error("Upload failed")
-
-      const data = await res.json()
-      const fileUrl = data.uri || data.url || (data.data && data.data.uri)
-
-      if (fileUrl) {
-        setUploadUrl(fileUrl)
-        fetchFiles()
-        toast({
-          title: "Success",
-          description: shouldCompress ? "Image compressed and uploaded." : "File uploaded successfully.",
-        })
-      }
-    } catch (error) {
-      toast({ title: "Upload Failed", variant: "destructive", description: "Check your connection and try again." })
-    } finally {
-      setUploading(false)
+    // compression
+    if (shouldCompress && selectedFile.type.startsWith("image/")) {
+      uploadUrl.searchParams.append("compress", "true")
+      uploadUrl.searchParams.append("level", compressionLevel)
     }
+
+    // resize (image only)
+    if (selectedFile.type.startsWith("image/")) {
+      uploadUrl.searchParams.append("resize", selectedResize)
+    }
+
+    const res = await fetch(uploadUrl.toString(), {
+      method: "POST",
+      body: formData,
+    })
+
+    if (!res.ok) throw new Error("Upload failed")
+
+    const data = await res.json()
+    const fileUrl = data.uri || data.url || data?.data?.uri
+
+    if (fileUrl) {
+      setUploadUrl(fileUrl)
+      fetchFiles()
+
+      toast({
+        title: "Success",
+        description: shouldCompress
+          ? "Image compressed, resized, and uploaded."
+          : "File uploaded successfully.",
+      })
+    }
+  } catch (error) {
+    toast({
+      title: "Upload Failed",
+      variant: "destructive",
+      description: "Check your connection and try again.",
+    })
+  } finally {
+    setUploading(false)
   }
+}
+
 
   const handleDownload = async (url: string, filename: string) => {
     try {
@@ -365,7 +387,8 @@ export default function FileManager() {
                               </Select>
                             </div>
                           </div>
-
+                           
+                            {/* File category */}
                           <div className="flex flex-col gap-2">
                             <Label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">
                               File Category:
@@ -383,6 +406,26 @@ export default function FileManager() {
                               </SelectContent>
                             </Select>
                           </div>
+
+                          {/* Resize */}
+                          <div className="flex flex-col gap-2">
+                            <Label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">
+                              File Resize:
+                            </Label>
+                            <Select value={selectedResize} onValueChange={(value) => setSelectedResize(value as FileResize)}>
+                              <SelectTrigger className="h-10 bg-background border-primary/20">
+                                <SelectValue placeholder="Select type" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {FILE_RESIZES.map((type) => (
+                                  <SelectItem key={type} value={type}>
+                                    {type}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+
 
                           <div className="flex gap-3 w-full sm:w-auto self-end">
                             <Button
