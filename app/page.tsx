@@ -29,7 +29,7 @@ interface FileItem {
 const FILE_TYPES = ["LOGIN", "REGISTER", "OTP", "PROFILE", "SURVEY", "QR", "FRGPWD", "DEFAULT", "BGLOGIN", "BGREGISTER", "BGOTP", "BGPROFILE", "BGSURVEY", "BGQR", "BGFRGPWD", "BGDEFAULT"] as const
 type FileType = (typeof FILE_TYPES)[number]
 
-const FILE_RESIZES = ["SD", "HD", "FHD", "QHD", "UHD", "UHD_2", "ORIGINAL"] as const
+const FILE_RESIZES = ["SD", "HD", "FHD", "QHD", "UHD", "UHD_2", "ORIGINAL", "ICON", "AVATAR"] as const
 type FileResize = (typeof FILE_RESIZES)[number]
 
 // Utility function to generate blur data URLs from image URIs
