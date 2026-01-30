@@ -580,7 +580,7 @@ export default function FileManager() {
                           {file.extension || "media"}
                         </span>
                         <span className="text-[10px] font-mono text-muted-foreground">
-                          {(file.size / (1024 * 1024)).toFixed(1)}MB
+                          {(file.size / (1024 * 1024)).toFixed(2)}MB
                         </span>
                       </div>
                     </div>
