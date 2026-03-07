@@ -2,7 +2,7 @@
 
 import type React from "react"
 import Image from "next/image"
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import { Upload, Copy, Check, ImageIcon, FilmIcon, Loader2, Download, Trash2, FileIcon, Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -26,7 +26,7 @@ interface FileItem {
   blurDataURL?: string
 }
 
-const FILE_TYPES = ["LOGIN", "REGISTER", "OTP", "PROFILE", "SURVEY", "QR", "FRGPWD", "DEFAULT", "BGLOGIN", "BGREGISTER", "BGOTP", "BGPROFILE", "BGSURVEY", "BGQR", "BGFRGPWD", "BGDEFAULT", , "ICON", "AVATAR"] as const
+const FILE_TYPES = ["LOGIN", "REGISTER", "OTP", "PROFILE", "SURVEY", "QR", "FRGPWD", "DEFAULT", "BGLOGIN", "BGREGISTER", "BGOTP", "BGPROFILE", "BGSURVEY", "BGQR", "BGFRGPWD", "BGDEFAULT", "ICON", "AVATAR"] as const
 type FileType = (typeof FILE_TYPES)[number]
 
 const FILE_RESIZES = ["SD", "HD", "FHD", "QHD", "UHD", "UHD_2", "ORIGINAL", "ICON", "AVATAR"] as const
@@ -80,88 +80,92 @@ export default function FileManager() {
   const [selectedResize, setSelectedResize] = useState<FileResize>("FHD")
   const [previewLoading, setPreviewLoading] = useState(false)
   const [galleryLoading, setGalleryLoading] = useState(true)
+  const [pageNumber, setPageNumber] = useState(0)
+  const [loading, setLoading] = useState(false)
+  const [hasMore, setHasMore] = useState(true)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const observer = useRef<IntersectionObserver | null>(null)
+
+  const PAGE_SIZE = 12
+
+  const fetchImages = useCallback(async (page: number) => {
+    if (loading || !hasMore) return
+
+    const isInitial = page === 0
+    if (isInitial) {
+      setGalleryLoading(true)
+    } else {
+      setLoading(true)
+    }
+
+    try {
+      const url = `${API_URL}?pageNumber=${page}&pageSize=${PAGE_SIZE}`
+
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+        },
+        cache: "no-store",
+      })
+
+      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`)
+
+      const data = await res.json()
+      const fileList = data?.content ?? []
+
+      if (fileList.length === 0) {
+        setHasMore(false)
+        return
+      }
+
+      const filesWithBlur = await Promise.all(
+        fileList.map(async (file: FileItem) => {
+          if (!file.contentType.startsWith("video/")) {
+            const blurDataURL = await generateBlurDataURL(file.uri)
+            return { ...file, blurDataURL }
+          }
+          return file
+        })
+      )
+
+      setFiles((prev) => (isInitial ? filesWithBlur : [...prev, ...filesWithBlur]))
+      setPageNumber(page + 1)
+
+    } catch (error: any) {
+      console.error("[v0] Error fetching files:", error.message)
+      if (pageNumber === 0) {
+        toast({ title: "Fetch Failed", variant: "destructive", description: "Could not load files." })
+      }
+    } finally {
+      if (isInitial) {
+        setGalleryLoading(false)
+      } else {
+        setLoading(false)
+      }
+    }
+  }, [loading, hasMore, pageNumber])
 
   useEffect(() => {
-    fetchFiles()
+    fetchImages(0)
   }, [])
 
-  // const fetchFiles = async () => {
-  //   try {
-  //     setGalleryLoading(true)
-  //     const res = await fetch(API_URL, { cache: "no-store" })
-  //     if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`)
+  const lastImageRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      if (loading || galleryLoading) return
 
-  //     const data = await res.json()
-  //     const fileList = Array.isArray(data) ? data : data.files || data.data || []
+      if (observer.current) observer.current.disconnect()
 
-  //     const filesWithBlur = await Promise.all(
-  //       fileList.map(async (file: FileItem) => {
-  //         if (!file.contentType.startsWith("video/")) {
-  //           const blurDataURL = await generateBlurDataURL(file.uri)
-  //           return { ...file, blurDataURL }
-  //         }
-  //         return file
-  //       }),
-  //     )
-
-  //     setFiles(filesWithBlur)
-  //   } catch (error: any) {
-  //     console.error("[v0] Error fetching files:", error.message)
-  //     toast({ title: "Fetch Failed", variant: "destructive", description: "Could not load files." })
-  //   } finally {
-  //     setGalleryLoading(false)
-  //   }
-  // }
-
-  const fetchFiles = async () => {
-  try {
-    setGalleryLoading(true)
-
-    const pageNumber = 0
-    const pageSize = 1000   // load all images
-
-    const url = `${API_URL}?pageNumber=${pageNumber}&pageSize=${pageSize}`
-
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        Accept: "application/json",
-      },
-      cache: "no-store",
-    })
-
-    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`)
-
-    const data = await res.json()
-
-    // Spring Boot pagination response
-    const fileList = data?.content ?? []
-
-    const filesWithBlur = await Promise.all(
-      fileList.map(async (file: FileItem) => {
-        if (!file.contentType.startsWith("video/")) {
-          const blurDataURL = await generateBlurDataURL(file.uri)
-          return { ...file, blurDataURL }
+      observer.current = new IntersectionObserver((entries) => {
+        if (entries[0].isIntersecting && hasMore) {
+          fetchImages(pageNumber)
         }
-        return file
       })
-    )
 
-    setFiles(filesWithBlur)
-
-  } catch (error: any) {
-    console.error("[v0] Error fetching files:", error.message)
-
-    toast({
-      title: "Fetch Failed",
-      variant: "destructive",
-      description: "Could not load files.",
-    })
-  } finally {
-    setGalleryLoading(false)
-  }
-}
+      if (node) observer.current.observe(node)
+    },
+    [loading, galleryLoading, hasMore, pageNumber, fetchImages]
+  )
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -188,62 +192,61 @@ export default function FileManager() {
   }
 
   const handleConfirmUpload = async () => {
-  if (!selectedFile) return
+    if (!selectedFile) return
 
-  setUploading(true)
+    setUploading(true)
 
-  const formData = new FormData()
-  formData.append("file", selectedFile)
+    const formData = new FormData()
+    formData.append("file", selectedFile)
 
-  try {
-    const uploadUrl = new URL("/api/files", window.location.origin)
+    try {
+      const uploadUrl = new URL("/api/files", window.location.origin)
 
-    // file category
-    uploadUrl.searchParams.append("type", selectedType)
+      uploadUrl.searchParams.append("type", selectedType)
 
-    // compression
-    if (shouldCompress && selectedFile.type.startsWith("image/")) {
-      uploadUrl.searchParams.append("compress", "true")
-      uploadUrl.searchParams.append("level", compressionLevel)
-    }
+      if (shouldCompress && selectedFile.type.startsWith("image/")) {
+        uploadUrl.searchParams.append("compress", "true")
+        uploadUrl.searchParams.append("level", compressionLevel)
+      }
 
-    // resize (image only)
-    if (selectedFile.type.startsWith("image/")) {
-      uploadUrl.searchParams.append("resize", selectedResize)
-    }
+      if (selectedFile.type.startsWith("image/")) {
+        uploadUrl.searchParams.append("resize", selectedResize)
+      }
 
-    const res = await fetch(uploadUrl.toString(), {
-      method: "POST",
-      body: formData,
-    })
-
-    if (!res.ok) throw new Error("Upload failed")
-
-    const data = await res.json()
-    const fileUrl = data.uri || data.url || data?.data?.uri
-
-    if (fileUrl) {
-      setUploadUrl(fileUrl)
-      fetchFiles()
-
-      toast({
-        title: "Success",
-        description: shouldCompress
-          ? "Image compressed, resized, and uploaded."
-          : "File uploaded successfully.",
+      const res = await fetch(uploadUrl.toString(), {
+        method: "POST",
+        body: formData,
       })
-    }
-  } catch (error) {
-    toast({
-      title: "Upload Failed",
-      variant: "destructive",
-      description: "Check your connection and try again.",
-    })
-  } finally {
-    setUploading(false)
-  }
-}
 
+      if (!res.ok) throw new Error("Upload failed")
+
+      const data = await res.json()
+      const fileUrl = data.uri || data.url || data?.data?.uri
+
+      if (fileUrl) {
+        setUploadUrl(fileUrl)
+        setFiles([])
+        setPageNumber(0)
+        setHasMore(true)
+        fetchImages(0)
+
+        toast({
+          title: "Success",
+          description: shouldCompress
+            ? "Image compressed, resized, and uploaded."
+            : "File uploaded successfully.",
+        })
+      }
+    } catch (error) {
+      toast({
+        title: "Upload Failed",
+        variant: "destructive",
+        description: "Check your connection and try again.",
+      })
+    } finally {
+      setUploading(false)
+    }
+  }
 
   const handleDownload = async (url: string, filename: string) => {
     try {
@@ -272,7 +275,10 @@ export default function FileManager() {
 
       if (res.ok) {
         toast({ title: "Deleted", description: "File has been removed successfully." })
-        fetchFiles()
+        setFiles([])
+        setPageNumber(0)
+        setHasMore(true)
+        fetchImages(0)
       } else {
         throw new Error("Failed to delete")
       }
@@ -289,6 +295,13 @@ export default function FileManager() {
   }
 
   const isVideo = (contentType: string) => contentType.startsWith("video/")
+
+  const handleRefresh = () => {
+    setFiles([])
+    setPageNumber(0)
+    setHasMore(true)
+    fetchImages(0)
+  }
 
   return (
     <main className="min-h-screen bg-background p-4 md:p-8 lg:p-12 font-sans selection:bg-primary/20">
@@ -364,7 +377,6 @@ export default function FileManager() {
                         </>
                       )}
 
-                      {/* Floating reset button for a cleaner look */}
                       <Button
                         variant="secondary"
                         size="sm"
@@ -437,7 +449,7 @@ export default function FileManager() {
                             </div>
                           </div>
                            
-                            {/* File category */}
+                          {/* File category */}
                           <div className="flex flex-col gap-2">
                             <Label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">
                               File Category:
@@ -474,7 +486,6 @@ export default function FileManager() {
                               </SelectContent>
                             </Select>
                           </div>
-
 
                           <div className="flex gap-3 w-full sm:w-auto self-end">
                             <Button
@@ -515,7 +526,7 @@ export default function FileManager() {
           </section>
         </div>
 
-        {/* Section 2: Gallery List */}
+        {/* Section 2: Gallery List with Infinite Scroll */}
         <section className="space-y-8">
           <div className="flex items-center justify-between border-b pb-4">
             <div className="flex items-center gap-3">
@@ -524,13 +535,13 @@ export default function FileManager() {
                 {files.length}
               </Badge>
             </div>
-            <Button variant="ghost" size="sm" onClick={fetchFiles} className="text-muted-foreground">
+            <Button variant="ghost" size="sm" onClick={handleRefresh} className="text-muted-foreground">
               Refresh
             </Button>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {galleryLoading ? (
+            {galleryLoading && files.length === 0 ? (
               [...Array(8)].map((_, i) => (
                 <Card key={i} className="overflow-hidden border-none shadow-sm ring-1 ring-muted-foreground/10">
                   <div className="aspect-video bg-muted/50">
@@ -540,104 +551,126 @@ export default function FileManager() {
               ))
             ) : (
               <TooltipProvider>
-                {files.map((file) => (
-                  <Card
-                    key={file.name}
-                    className="group overflow-hidden border-none shadow-sm hover:shadow-xl transition-all duration-300 ring-1 ring-muted-foreground/10 hover:ring-primary/30"
-                  >
-                    <div className="aspect-video relative bg-zinc-900 flex items-center justify-center group-hover:scale-[1.02] transition-transform duration-500">
-                      {!isVideo(file.contentType) ? (
-                        <>
-                          <Image
-                            src={file.uri || "/placeholder.svg"}
-                            alt={file.name}
-                            fill
-                            placeholder={file.blurDataURL ? "blur" : "empty"}
-                            blurDataURL={
-                              file.blurDataURL ||
-                              "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Crect fill='%23e5e5e5' width='10' height='10'/%3E%3C/svg%3E"
-                            }
-                            style={{ objectFit: "cover" }}
-                            className="opacity-90 group-hover:opacity-100 transition-opacity duration-300 animate-in fade-in duration-500"
-                            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
-                          />
-                        </>
-                      ) : (
-                        <div className="flex flex-col items-center gap-3">
-                          <div className="p-3 bg-white/10 rounded-full backdrop-blur-sm">
-                            <FilmIcon className="h-8 w-8 text-white" />
+                {files.map((file, index) => {
+                  const isLast = index === files.length - 1
+                  return (
+                    <div
+                      key={file.name + index}
+                      ref={isLast && hasMore ? lastImageRef : null}
+                    >
+                      <Card
+                        className="group overflow-hidden border-none shadow-sm hover:shadow-xl transition-all duration-300 ring-1 ring-muted-foreground/10 hover:ring-primary/30"
+                      >
+                        <div className="aspect-video relative bg-zinc-900 flex items-center justify-center group-hover:scale-[1.02] transition-transform duration-500">
+                          {!isVideo(file.contentType) ? (
+                            <>
+                              <Image
+                                src={file.uri || "/placeholder.svg"}
+                                alt={file.name}
+                                fill
+                                placeholder={file.blurDataURL ? "blur" : "empty"}
+                                blurDataURL={
+                                  file.blurDataURL ||
+                                  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Crect fill='%23e5e5e5' width='10' height='10'/%3E%3C/svg%3E"
+                                }
+                                style={{ objectFit: "cover" }}
+                                className="opacity-90 group-hover:opacity-100 transition-opacity duration-300 animate-in fade-in duration-500"
+                                sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
+                              />
+                            </>
+                          ) : (
+                            <div className="flex flex-col items-center gap-3">
+                              <div className="p-3 bg-white/10 rounded-full backdrop-blur-sm">
+                                <FilmIcon className="h-8 w-8 text-white" />
+                              </div>
+                              <span className="text-[10px] uppercase font-black tracking-widest text-white/60">
+                                MP4 Media
+                              </span>
+                            </div>
+                          )}
+
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-all duration-300 flex flex-col justify-end p-4">
+                            <div className="flex items-center justify-center gap-2 translate-y-4 group-hover:translate-y-0 transition-transform duration-300">
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    size="icon"
+                                    className="bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/10"
+                                    onClick={() => copyToClipboard(file.uri, file.name)}
+                                  >
+                                    {copiedId === file.name ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Copy URL</TooltipContent>
+                              </Tooltip>
+
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    size="icon"
+                                    className="bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/10"
+                                    onClick={() => handleDownload(file.uri, file.name)}
+                                  >
+                                    <Download className="h-4 w-4" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Download</TooltipContent>
+                              </Tooltip>
+
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    size="icon"
+                                    variant="destructive"
+                                    className="bg-red-500/20 hover:bg-red-500/40 backdrop-blur-md border border-red-500/20"
+                                    onClick={() => handleFileDelete(file.name)}
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Delete</TooltipContent>
+                              </Tooltip>
+                            </div>
                           </div>
-                          <span className="text-[10px] uppercase font-black tracking-widest text-white/60">
-                            MP4 Media
-                          </span>
                         </div>
-                      )}
-
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-all duration-300 flex flex-col justify-end p-4">
-                        <div className="flex items-center justify-center gap-2 translate-y-4 group-hover:translate-y-0 transition-transform duration-300">
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                size="icon"
-                                className="bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/10"
-                                onClick={() => copyToClipboard(file.uri, file.name)}
-                              >
-                                {copiedId === file.name ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>Copy URL</TooltipContent>
-                          </Tooltip>
-
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                size="icon"
-                                className="bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/10"
-                                onClick={() => handleDownload(file.uri, file.name)}
-                              >
-                                <Download className="h-4 w-4" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>Download</TooltipContent>
-                          </Tooltip>
-
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                size="icon"
-                                variant="destructive"
-                                className="bg-red-500/20 hover:bg-red-500/40 backdrop-blur-md border border-red-500/20"
-                                onClick={() => handleFileDelete(file.name)}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>Delete</TooltipContent>
-                          </Tooltip>
+                        <div className="p-4 space-y-1 bg-card">
+                          <h4 className="text-sm font-semibold truncate flex-1">{file.name}</h4>
+                          {file.type && (
+                            <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4 border-primary/30 text-primary">
+                              {file.type}
+                            </Badge>
+                          )}
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-tight">
+                              {file.extension || "media"}
+                            </span>
+                            <span className="text-[10px] font-mono text-muted-foreground">
+                              {(file.size / (1024 * 1024)).toFixed(2)}MB
+                            </span>
+                          </div>
                         </div>
-                      </div>
+                      </Card>
                     </div>
-                    <div className="p-4 space-y-1 bg-card">
-                      <h4 className="text-sm font-semibold truncate flex-1">{file.name}</h4>
-                      {file.type && (
-                        <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4 border-primary/30 text-primary">
-                          {file.type}
-                        </Badge>
-                      )}
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-tight">
-                          {file.extension || "media"}
-                        </span>
-                        <span className="text-[10px] font-mono text-muted-foreground">
-                          {(file.size / (1024 * 1024)).toFixed(2)}MB
-                        </span>
-                      </div>
-                    </div>
-                  </Card>
-                ))}
+                  )
+                })}
               </TooltipProvider>
             )}
           </div>
+
+          {loading && (
+            <div className="flex items-center justify-center py-8">
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span>Loading more images...</span>
+              </div>
+            </div>
+          )}
+
+          {!hasMore && files.length > 0 && (
+            <div className="text-center py-8 text-muted-foreground">
+              No more images to load
+            </div>
+          )}
         </section>
       </div>
     </main>
