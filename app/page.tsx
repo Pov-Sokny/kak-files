@@ -14,7 +14,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { toast } from "@/hooks/use-toast"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
-const API_URL = "/api/files"
+const API_URL = "https://resource.supersurvey.live/api/v1/files"
 
 interface FileItem {
   name: string
@@ -86,33 +86,82 @@ export default function FileManager() {
     fetchFiles()
   }, [])
 
+  // const fetchFiles = async () => {
+  //   try {
+  //     setGalleryLoading(true)
+  //     const res = await fetch(API_URL, { cache: "no-store" })
+  //     if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`)
+
+  //     const data = await res.json()
+  //     const fileList = Array.isArray(data) ? data : data.files || data.data || []
+
+  //     const filesWithBlur = await Promise.all(
+  //       fileList.map(async (file: FileItem) => {
+  //         if (!file.contentType.startsWith("video/")) {
+  //           const blurDataURL = await generateBlurDataURL(file.uri)
+  //           return { ...file, blurDataURL }
+  //         }
+  //         return file
+  //       }),
+  //     )
+
+  //     setFiles(filesWithBlur)
+  //   } catch (error: any) {
+  //     console.error("[v0] Error fetching files:", error.message)
+  //     toast({ title: "Fetch Failed", variant: "destructive", description: "Could not load files." })
+  //   } finally {
+  //     setGalleryLoading(false)
+  //   }
+  // }
+
   const fetchFiles = async () => {
-    try {
-      setGalleryLoading(true)
-      const res = await fetch(API_URL, { cache: "no-store" })
-      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`)
+  try {
+    setGalleryLoading(true)
 
-      const data = await res.json()
-      const fileList = Array.isArray(data) ? data : data.files || data.data || []
+    const pageNumber = 0
+    const pageSize = 1000   // load all images
 
-      const filesWithBlur = await Promise.all(
-        fileList.map(async (file: FileItem) => {
-          if (!file.contentType.startsWith("video/")) {
-            const blurDataURL = await generateBlurDataURL(file.uri)
-            return { ...file, blurDataURL }
-          }
-          return file
-        }),
-      )
+    const url = `${API_URL}?pageNumber=${pageNumber}&pageSize=${pageSize}`
 
-      setFiles(filesWithBlur)
-    } catch (error: any) {
-      console.error("[v0] Error fetching files:", error.message)
-      toast({ title: "Fetch Failed", variant: "destructive", description: "Could not load files." })
-    } finally {
-      setGalleryLoading(false)
-    }
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+      },
+      cache: "no-store",
+    })
+
+    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`)
+
+    const data = await res.json()
+
+    // Spring Boot pagination response
+    const fileList = data?.content ?? []
+
+    const filesWithBlur = await Promise.all(
+      fileList.map(async (file: FileItem) => {
+        if (!file.contentType.startsWith("video/")) {
+          const blurDataURL = await generateBlurDataURL(file.uri)
+          return { ...file, blurDataURL }
+        }
+        return file
+      })
+    )
+
+    setFiles(filesWithBlur)
+
+  } catch (error: any) {
+    console.error("[v0] Error fetching files:", error.message)
+
+    toast({
+      title: "Fetch Failed",
+      variant: "destructive",
+      description: "Could not load files.",
+    })
+  } finally {
+    setGalleryLoading(false)
   }
+}
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
