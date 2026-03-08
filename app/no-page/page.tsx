@@ -94,7 +94,7 @@ export default function FileManager() {
   const [totalPages, setTotalPages] = useState(0)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const PAGE_SIZE = 8
+  const PAGE_SIZE = 1000
 
   // Fetch images for specific page
   const fetchImagesForPage = useCallback(async (page: number) => {
@@ -654,68 +654,7 @@ export default function FileManager() {
           </div>
 
           {/* Pagination Controls */}
-          <Pagination className="pt-10">
-            <PaginationContent>
-
-              {/* Previous */}
-              <PaginationItem>
-                <PaginationPrevious
-                  onClick={() => currentPage > 0 && fetchImagesForPage(currentPage - 1)}
-                  className={
-                    currentPage === 0
-                      ? "pointer-events-none opacity-50"
-                      : "cursor-pointer"
-                  }
-                />
-              </PaginationItem>
-
-              {/* Page Numbers */}
-              {getPaginationPages().map((page, index) => {
-
-                if (page === "...") {
-                  return (
-                    <PaginationItem key={`page-${page}`}>
-                      <span className="px-3 text-muted-foreground">...</span>
-                    </PaginationItem>
-                  )
-                }
-
-                return (
-                  <PaginationItem key={index}>
-                    <PaginationLink
-                      key={`page-${page}`}
-                      isActive={currentPage === page}
-                      onClick={() => {
-                        if (!loading) fetchImagesForPage(page as number)
-                      }}
-                      className={`cursor-pointer ${currentPage === page
-                          ? "bg-[oklch(0.62_0.17_163)] text-white hover:bg-[oklch(0.62_0.17_163)]"
-                          : ""
-                        }`}
-                    >
-                      {(page as number) + 1}
-                    </PaginationLink>
-                  </PaginationItem>
-                )
-              })}
-
-              {/* Next */}
-              <PaginationItem>
-                <PaginationNext
-                  onClick={() => {
-                    if (currentPage < totalPages - 1 && !loading) {
-                      fetchImagesForPage(currentPage + 1)
-                    }
-                  }}
-                  className={`${currentPage >= totalPages - 1 || loading
-                    ? "pointer-events-none opacity-50"
-                    : "cursor-pointer hover:bg-[oklch(0.62_0.17_163)] hover:text-white"
-                    }`}
-                />
-              </PaginationItem>
-
-            </PaginationContent>
-          </Pagination>
+          
 
         </section>
       </div>

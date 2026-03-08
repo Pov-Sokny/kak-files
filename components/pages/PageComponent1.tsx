@@ -14,15 +14,6 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { toast } from "@/hooks/use-toast"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
-import {
-  Pagination,
-  PaginationContent,
-  PaginationItem,
-  PaginationLink,
-  PaginationNext,
-  PaginationPrevious,
-} from "@/components/ui/pagination"
-
 const API_URL = "https://resource.supersurvey.live/api/v1/files"
 
 interface FileItem {
@@ -31,7 +22,7 @@ interface FileItem {
   extension: string
   uri: string
   size: number
-  type?: "LOGIN" | "REGISTER" | "OTP" | "PROFILE" | "SURVEY" | "QR" | "FRGPWD" | "DEFAULT" | "BGLOGIN" | "BGREGISTER" | "BGOTP" | "BGPROFILE" | "BGSURVEY" | "BGQR" | "BGFRGPWD" | "BGDEFAULT"
+  type?: "LOGIN" | "REGISTER" | "OTP" | "PROFILE" | "SURVEY" | "QR" | "FRGPWD" | "DEFAULT" | "BGLOGIN" | "BGREGISTER" | "BGOTP" | "BGPROFILE" | "BGSURVEY" | "BGQR" | "BGFRGPWD" | "BGDEFAULT" 
   blurDataURL?: string
 }
 
@@ -89,55 +80,124 @@ export default function FileManager() {
   const [selectedResize, setSelectedResize] = useState<FileResize>("FHD")
   const [previewLoading, setPreviewLoading] = useState(false)
   const [galleryLoading, setGalleryLoading] = useState(true)
-  const [currentPage, setCurrentPage] = useState(0)
+  const [pageNumber, setPageNumber] = useState(0)
   const [loading, setLoading] = useState(false)
-  const [totalPages, setTotalPages] = useState(0)
+  const [hasMore, setHasMore] = useState(true)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const observer = useRef<IntersectionObserver | null>(null)
 
-  const PAGE_SIZE = 8
+  const PAGE_SIZE = 12
 
-  // Fetch images for specific page
-  const fetchImagesForPage = useCallback(async (page: number) => {
-    setLoading(true)
-    try {
-      const url = `${API_URL}?pageNumber=${page}&pageSize=${PAGE_SIZE}`
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { Accept: "application/json" },
-        cache: "no-store",
-      })
-      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`)
-
-      const data = await res.json()
-      const fileList = data?.content ?? []
-
-      const filesWithBlur = await Promise.all(
-        fileList.map(async (file: FileItem) => {
-          if (!file.contentType.startsWith("video/")) {
-            const blurDataURL = await generateBlurDataURL(file.uri)
-            return { ...file, blurDataURL }
-          }
-          return file
-        })
-      )
-
-      setCurrentPage(page)
-      setFiles(filesWithBlur)
-      setTotalPages(data?.totalPages ?? data?.page?.totalPages ?? 1)
-    } catch (error: any) {
-      console.error("[v0] Error loading images:", error.message)
-      toast({ title: "Fetch Failed", variant: "destructive", description: "Could not load files." })
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-
-  // Initial load
+  // Initial load effect
   useEffect(() => {
-    setGalleryLoading(true)
-    fetchImagesForPage(0).finally(() => setGalleryLoading(false))
+    const loadInitial = async () => {
+      setGalleryLoading(true)
+      try {
+        const url = `${API_URL}?pageNumber=0&pageSize=${PAGE_SIZE}`
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { Accept: "application/json" },
+          cache: "no-store",
+        })
+        if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`)
+        
+        const data = await res.json()
+        const fileList = data?.content ?? []
+        
+        if (fileList.length < PAGE_SIZE) {
+          setHasMore(false)
+        }
+        
+        const filesWithBlur = await Promise.all(
+          fileList.map(async (file: FileItem) => {
+            if (!file.contentType.startsWith("video/")) {
+              const blurDataURL = await generateBlurDataURL(file.uri)
+              return { ...file, blurDataURL }
+            }
+            return file
+          })
+        )
+        setFiles(filesWithBlur)
+        setPageNumber(1)
+      } catch (error: any) {
+        console.error("[v0] Error loading initial images:", error.message)
+        toast({ title: "Fetch Failed", variant: "destructive", description: "Could not load files." })
+      } finally {
+        setGalleryLoading(false)
+      }
+    }
+
+    loadInitial()
   }, [])
+
+  // Setup intersection observer for pagination
+  useEffect(() => {
+    if (loading || galleryLoading || !hasMore || files.length === 0) return
+    
+    const observerCallback = async (entries: IntersectionObserverEntry[]) => {
+      if (!entries[0].isIntersecting || loading) return
+      
+      console.log("[v0] Loading more images, current pageNumber:", pageNumber)
+      setLoading(true)
+      try {
+        const url = `${API_URL}?pageNumber=${pageNumber}&pageSize=${PAGE_SIZE}`
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { Accept: "application/json" },
+          cache: "no-store",
+        })
+        if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`)
+        
+        const data = await res.json()
+        const fileList = data?.content ?? []
+        
+        if (fileList.length === 0) {
+          setHasMore(false)
+          setLoading(false)
+          return
+        }
+        
+        if (fileList.length < PAGE_SIZE) {
+          setHasMore(false)
+        }
+        
+        const filesWithBlur = await Promise.all(
+          fileList.map(async (file: FileItem) => {
+            if (!file.contentType.startsWith("video/")) {
+              const blurDataURL = await generateBlurDataURL(file.uri)
+              return { ...file, blurDataURL }
+            }
+            return file
+          })
+        )
+        
+        setFiles((prev) => {
+          const existingUris = new Set(prev.map(f => f.uri))
+          const newFiles = filesWithBlur.filter(f => !existingUris.has(f.uri))
+          console.log("[v0] Adding", newFiles.length, "new files. Total now:", prev.length + newFiles.length)
+          return [...prev, ...newFiles]
+        })
+        setPageNumber(p => p + 1)
+      } catch (error: any) {
+        console.error("[v0] Error loading more images:", error.message)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    if (observer.current) observer.current.disconnect()
+    observer.current = new IntersectionObserver(observerCallback, { rootMargin: "200px" })
+
+    const lastElement = document.querySelector('[data-last-image="true"]')
+    if (lastElement) {
+      observer.current.observe(lastElement)
+      console.log("[v0] Observer attached to last element")
+    }
+
+    return () => {
+      if (observer.current) observer.current.disconnect()
+    }
+  }, [files.length, hasMore])
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -197,7 +257,10 @@ export default function FileManager() {
 
       if (fileUrl) {
         setUploadUrl(fileUrl)
-        fetchImagesForPage(0)
+        setFiles([])
+        setPageNumber(0)
+        setHasMore(true)
+        fetchImages(0)
 
         toast({
           title: "Success",
@@ -244,7 +307,10 @@ export default function FileManager() {
 
       if (res.ok) {
         toast({ title: "Deleted", description: "File has been removed successfully." })
-        fetchImagesForPage(currentPage)
+        setFiles([])
+        setPageNumber(0)
+        setHasMore(true)
+        fetchImages(0)
       } else {
         throw new Error("Failed to delete")
       }
@@ -263,40 +329,10 @@ export default function FileManager() {
   const isVideo = (contentType: string) => contentType.startsWith("video/")
 
   const handleRefresh = () => {
-    fetchImagesForPage(0)
-  }
-
-  const getPaginationPages = () => {
-    const pages: (number | string)[] = []
-    const maxVisible = 5
-
-    if (totalPages <= 10) {
-      for (let i = 0; i < totalPages; i++) {
-        pages.push(i)
-      }
-      return pages
-    }
-
-    pages.push(0)
-
-    if (currentPage > maxVisible) {
-      pages.push("...")
-    }
-
-    const start = Math.max(1, currentPage - 2)
-    const end = Math.min(totalPages - 2, currentPage + 2)
-
-    for (let i = start; i <= end; i++) {
-      pages.push(i)
-    }
-
-    if (currentPage < totalPages - maxVisible) {
-      pages.push("...")
-    }
-
-    pages.push(totalPages - 1)
-
-    return pages
+    setFiles([])
+    setPageNumber(0)
+    setHasMore(true)
+    fetchImages(0)
   }
 
   return (
@@ -444,7 +480,7 @@ export default function FileManager() {
                               </Select>
                             </div>
                           </div>
-
+                           
                           {/* File category */}
                           <div className="flex flex-col gap-2">
                             <Label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">
@@ -653,70 +689,20 @@ export default function FileManager() {
             )}
           </div>
 
-          {/* Pagination Controls */}
-          <Pagination className="pt-10">
-            <PaginationContent>
+          {loading && (
+            <div className="flex items-center justify-center py-8">
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span>Loading more images...</span>
+              </div>
+            </div>
+          )}
 
-              {/* Previous */}
-              <PaginationItem>
-                <PaginationPrevious
-                  onClick={() => currentPage > 0 && fetchImagesForPage(currentPage - 1)}
-                  className={
-                    currentPage === 0
-                      ? "pointer-events-none opacity-50"
-                      : "cursor-pointer"
-                  }
-                />
-              </PaginationItem>
-
-              {/* Page Numbers */}
-              {getPaginationPages().map((page, index) => {
-
-                if (page === "...") {
-                  return (
-                    <PaginationItem key={`page-${page}`}>
-                      <span className="px-3 text-muted-foreground">...</span>
-                    </PaginationItem>
-                  )
-                }
-
-                return (
-                  <PaginationItem key={index}>
-                    <PaginationLink
-                      key={`page-${page}`}
-                      isActive={currentPage === page}
-                      onClick={() => {
-                        if (!loading) fetchImagesForPage(page as number)
-                      }}
-                      className={`cursor-pointer ${currentPage === page
-                          ? "bg-[oklch(0.62_0.17_163)] text-white hover:bg-[oklch(0.62_0.17_163)]"
-                          : ""
-                        }`}
-                    >
-                      {(page as number) + 1}
-                    </PaginationLink>
-                  </PaginationItem>
-                )
-              })}
-
-              {/* Next */}
-              <PaginationItem>
-                <PaginationNext
-                  onClick={() => {
-                    if (currentPage < totalPages - 1 && !loading) {
-                      fetchImagesForPage(currentPage + 1)
-                    }
-                  }}
-                  className={`${currentPage >= totalPages - 1 || loading
-                    ? "pointer-events-none opacity-50"
-                    : "cursor-pointer hover:bg-[oklch(0.62_0.17_163)] hover:text-white"
-                    }`}
-                />
-              </PaginationItem>
-
-            </PaginationContent>
-          </Pagination>
-
+          {!hasMore && files.length > 0 && (
+            <div className="text-center py-8 text-muted-foreground">
+              No more images to load
+            </div>
+          )}
         </section>
       </div>
     </main>

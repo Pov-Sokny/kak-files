@@ -45,7 +45,13 @@ export default function AutoScrollPage() {
         return
       }
 
-      setFiles((prev) => [...prev, ...data.content])
+      // Deduplicate: only add files that aren't already in state
+      setFiles((prev) => {
+        const existingUris = new Set(prev.map(f => f.uri))
+        const newFiles = data.content.filter(f => !existingUris.has(f.uri))
+        console.log("[v0] Adding", newFiles.length, "new files (filtered from", data.content.length, '). Total:', prev.length + newFiles.length)
+        return [...prev, ...newFiles]
+      })
       setPageNumber(page + 1)
 
     } catch (error) {
@@ -97,7 +103,7 @@ export default function AutoScrollPage() {
             return (
               <div
                 ref={lastImageRef}
-                key={file.name + index}
+                key={file.uri}
                 className="relative h-60"
               >
                 <Image
@@ -112,7 +118,7 @@ export default function AutoScrollPage() {
           }
 
           return (
-            <div key={file.name + index} className="relative h-60">
+            <div key={file.uri} className="relative h-60">
               <Image
                 src={file.uri}
                 alt={file.name}
